@@ -246,13 +246,13 @@ export const SenderCard = forwardRef<SenderCardHandle, SenderCardProps>(
       </div>
 
       <div className={styles.footer}>
-        <button className={styles.footerBtn} onClick={onSkip}>
+        <button className={styles.footerBtn} onClick={() => onSkip()}>
           <span className={styles.arrow}>‹</span> Skip
         </button>
-        <button className={styles.footerBtnCenter} onClick={onTodo}>
+        <button className={styles.footerBtnCenter} onClick={() => onTodo()}>
           ↓ Todo
         </button>
-        <button className={styles.footerBtn} onClick={onMarkAsRead}>
+        <button className={styles.footerBtn} onClick={() => onMarkAsRead()}>
           Mark as Read <span className={styles.arrow}>›</span>
         </button>
       </div>
