@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import type { ParsedEmail } from '../types/gmail';
 import { extractReaderContent } from '../services/gmail';
 import styles from './EmailContent.module.css';
@@ -27,18 +27,62 @@ export function EmailContent({ email, readerView }: EmailContentProps) {
   }, [email, readerView]);
 
   if (content.type === 'html') {
-    return (
-      <div
-        className={styles.htmlContent}
-        dangerouslySetInnerHTML={{ __html: content.content }}
-      />
-    );
+    return <HtmlIframe html={content.content} />;
   }
 
   return (
     <div className={styles.textContent}>
       {content.content}
     </div>
+  );
+}
+
+function HtmlIframe({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(200);
+
+  const srcdoc = useMemo(() => {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="only light"><style>
+body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#222;background:#fff;word-wrap:break-word;overflow-wrap:break-word}
+img{max-width:100%!important;height:auto!important}
+a{color:#1a73e8}
+table{max-width:100%!important}
+*{max-width:100%!important;box-sizing:border-box}
+blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #ccc;color:#666}
+pre,code{background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px}
+pre{padding:12px;overflow-x:auto}
+</style></head><body>${html}</body></html>`;
+  }, [html]);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const handleLoad = () => {
+      try {
+        const doc = iframe.contentDocument;
+        if (doc) {
+          const h = doc.documentElement.scrollHeight;
+          setHeight(h);
+        }
+      } catch {
+        // cross-origin, ignore
+      }
+    };
+
+    iframe.addEventListener('load', handleLoad);
+    return () => iframe.removeEventListener('load', handleLoad);
+  }, [srcdoc]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      srcDoc={srcdoc}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      className={styles.htmlIframe}
+      style={{ height }}
+      title="Email content"
+    />
   );
 }
 

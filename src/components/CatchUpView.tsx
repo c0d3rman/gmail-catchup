@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { AnimatePresence } from 'framer-motion';
-import { SenderCard } from './SenderCard';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { SenderCard, type SenderCardHandle, type DragOffset } from './SenderCard';
 import { TodoSidebar } from './TodoSidebar';
-import { fetchAllUnreadEmails, groupEmailsBySender, markAsRead, markMultipleAsRead, type LoadingProgress } from '../services/gmail';
-import type { SenderGroup } from '../types/gmail';
+import { fetchAllUnreadEmails, groupEmailsBySender, markAsRead, markMultipleAsRead, markMultipleAsUnread, markAsUnread, type LoadingProgress } from '../services/gmail';
+import type { SenderGroup, ParsedEmail } from '../types/gmail';
 import styles from './CatchUpView.module.css';
 
 interface CatchUpViewProps {
@@ -14,10 +13,22 @@ interface CatchUpViewProps {
 
 type ActionType = 'read' | 'skip' | 'todo';
 
-type Action = {
+type GroupAction = {
+  scope: 'group';
   type: ActionType;
   group: SenderGroup;
+  groupIndex: number;
 };
+
+type EmailAction = {
+  scope: 'email';
+  type: ActionType;
+  email: ParsedEmail;
+  groupIndex: number;
+  originalGroup: SenderGroup;
+};
+
+type Action = GroupAction | EmailAction;
 
 export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewProps) {
   const [senderGroups, setSenderGroups] = useState<SenderGroup[]>([]);
@@ -29,6 +40,11 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   const [actionHistory, setActionHistory] = useState<Action[]>([]);
   const [showComplete, setShowComplete] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [departingGroup, setDepartingGroup] = useState<SenderGroup | null>(null);
+  const [departingDirection, setDepartingDirection] = useState<'left' | 'right' | 'down'>('left');
+  const [departingOffset, setDepartingOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const cardRef = useRef<SenderCardHandle>(null);
+  const departingRef = useRef<SenderCardHandle>(null);
 
   const loadEmails = useCallback(async () => {
     setIsLoading(true);
@@ -37,7 +53,13 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
 
     try {
       const emails = await fetchAllUnreadEmails(accessToken, (progress) => {
-        setLoadingProgress(progress);
+        setLoadingProgress(prev => {
+          // Never let the loaded count decrease
+          if (prev && prev.phase === progress.phase && progress.loaded < prev.loaded) {
+            return prev;
+          }
+          return progress;
+        });
       });
       const groups = groupEmailsBySender(emails);
       setSenderGroups(groups);
@@ -66,22 +88,30 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
       // Don't trigger if typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
+      // Ctrl+Z / Cmd+Z for undo
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      // Don't capture arrow keys with any modifier
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+
       switch (e.key) {
         case 'ArrowLeft':
           e.preventDefault();
-          handleSkip();
+          cardRef.current?.animateSkip();
           break;
         case 'ArrowRight':
           e.preventDefault();
-          handleMarkAsRead();
+          cardRef.current?.animateMarkAsRead();
           break;
         case 'ArrowDown':
           e.preventDefault();
-          handleTodo();
+          cardRef.current?.animateTodo();
           break;
         case 'ArrowUp':
-        case 'z':
-          if (e.key === 'z' && !e.ctrlKey && !e.metaKey) break;
           e.preventDefault();
           handleUndo();
           break;
@@ -102,52 +132,146 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     }
   };
 
-  const handleMarkAsRead = async () => {
+  const departCurrentCard = (direction: 'left' | 'right' | 'down', offset?: DragOffset) => {
+    if (!currentGroup) return;
+    setDepartingGroup(currentGroup);
+    setDepartingDirection(direction);
+    setDepartingOffset(offset ?? { x: 0, y: 0 });
+  };
+
+  const handleDepartingDone = () => {
+    setDepartingGroup(null);
+  };
+
+  const handleMarkAsRead = (offset?: DragOffset) => {
     if (!currentGroup) return;
 
-    setActionHistory(prev => [...prev, { type: 'read', group: currentGroup }]);
+    setActionHistory(prev => [...prev, { scope: 'group', type: 'read', group: currentGroup, groupIndex: currentIndex }]);
+    departCurrentCard('right', offset);
+    advanceToNext();
 
-    try {
-      const messageIds = currentGroup.emails.map(e => e.id);
-      await markMultipleAsRead(accessToken, messageIds);
-    } catch (err) {
+    const messageIds = currentGroup.emails.map(e => e.id);
+    markMultipleAsRead(accessToken, messageIds).catch(err => {
       console.error('Failed to mark as read:', err);
-    }
-
-    advanceToNext();
+    });
   };
 
-  const handleSkip = () => {
+  const handleSkip = (offset?: DragOffset) => {
     if (!currentGroup) return;
 
-    setActionHistory(prev => [...prev, { type: 'skip', group: currentGroup }]);
+    setActionHistory(prev => [...prev, { scope: 'group', type: 'skip', group: currentGroup, groupIndex: currentIndex }]);
+    departCurrentCard('left', offset);
     advanceToNext();
   };
 
-  const handleTodo = () => {
+  const handleTodo = (offset?: DragOffset) => {
     if (!currentGroup) return;
 
-    setActionHistory(prev => [...prev, { type: 'todo', group: currentGroup }]);
-    setTodoGroups(prev => [...prev, currentGroup]);
+    setActionHistory(prev => [...prev, { scope: 'group', type: 'todo', group: currentGroup, groupIndex: currentIndex }]);
+    departCurrentCard('down', offset);
+    // Merge with existing todo group from same sender
+    setTodoGroups(prev => {
+      const existingIdx = prev.findIndex(g => g.senderEmail.toLowerCase() === currentGroup.senderEmail.toLowerCase());
+      if (existingIdx !== -1) {
+        const updated = [...prev];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          emails: [...updated[existingIdx].emails, ...currentGroup.emails],
+        };
+        return updated;
+      }
+      return [...prev, currentGroup];
+    });
     advanceToNext();
   };
 
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (actionHistory.length === 0) return;
 
     const lastAction = actionHistory[actionHistory.length - 1];
     setActionHistory(prev => prev.slice(0, -1));
 
-    if (lastAction.type === 'todo') {
-      setTodoGroups(prev => prev.filter(g => g.senderEmail !== lastAction.group.senderEmail));
-    }
+    if (lastAction.scope === 'group') {
+      if (lastAction.type === 'todo') {
+        // Remove the group's emails from todo
+        setTodoGroups(prev => {
+          return prev.map(g => {
+            if (g.senderEmail.toLowerCase() === lastAction.group.senderEmail.toLowerCase()) {
+              const emailIds = new Set(lastAction.group.emails.map(e => e.id));
+              const remaining = g.emails.filter(e => !emailIds.has(e.id));
+              if (remaining.length === 0) return null;
+              return { ...g, emails: remaining };
+            }
+            return g;
+          }).filter((g): g is SenderGroup => g !== null);
+        });
+      }
 
-    setCurrentIndex(prev => prev - 1);
-    setShowComplete(false);
+      if (lastAction.type === 'read') {
+        try {
+          const messageIds = lastAction.group.emails.map(e => e.id);
+          await markMultipleAsUnread(accessToken, messageIds);
+        } catch (err) {
+          console.error('Failed to mark as unread:', err);
+        }
+      }
+
+      setCurrentIndex(prev => prev - 1);
+      setShowComplete(false);
+    } else {
+      // Email-level action
+      const { email, groupIndex, originalGroup } = lastAction;
+
+      if (lastAction.type === 'todo') {
+        // Remove email from todo groups
+        setTodoGroups(prev => {
+          return prev.map(g => {
+            if (g.senderEmail.toLowerCase() === email.fromEmail.toLowerCase()) {
+              const remaining = g.emails.filter(e => e.id !== email.id);
+              if (remaining.length === 0) return null;
+              return { ...g, emails: remaining };
+            }
+            return g;
+          }).filter((g): g is SenderGroup => g !== null);
+        });
+      }
+
+      if (lastAction.type === 'read') {
+        try {
+          await markAsUnread(accessToken, email.id);
+        } catch (err) {
+          console.error('Failed to mark as unread:', err);
+        }
+      }
+
+      // Re-add the email to its original group
+      setSenderGroups(prev => {
+        const updated = [...prev];
+        const group = updated[groupIndex];
+        if (group && group.senderEmail.toLowerCase() === originalGroup.senderEmail.toLowerCase()) {
+          // Add email back, sorted by date
+          const emails = [...group.emails, email].sort((a, b) => b.date.getTime() - a.date.getTime());
+          updated[groupIndex] = { ...group, emails };
+        }
+        return updated;
+      });
+    }
   };
 
   const handleEmailAction = async (emailId: string, action: 'read' | 'skip' | 'todo') => {
     if (!currentGroup) return;
+
+    const email = currentGroup.emails.find(e => e.id === emailId);
+    if (!email) return;
+
+    // Track action in history for undo
+    setActionHistory(prev => [...prev, {
+      scope: 'email',
+      type: action,
+      email,
+      groupIndex: currentIndex,
+      originalGroup: currentGroup,
+    }]);
 
     if (action === 'read') {
       try {
@@ -155,6 +279,26 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
       } catch (err) {
         console.error('Failed to mark as read:', err);
       }
+    }
+
+    if (action === 'todo') {
+      // Merge with existing todo group from same sender
+      setTodoGroups(prev => {
+        const existingIdx = prev.findIndex(g => g.senderEmail.toLowerCase() === email.fromEmail.toLowerCase());
+        if (existingIdx !== -1) {
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            emails: [...updated[existingIdx].emails, email].sort((a, b) => b.date.getTime() - a.date.getTime()),
+          };
+          return updated;
+        }
+        return [...prev, {
+          senderEmail: email.fromEmail,
+          senderName: email.from,
+          emails: [email],
+        }];
+      });
     }
 
     // Remove the email from the current group
@@ -172,10 +316,17 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   };
 
   const handleTodoClick = (group: SenderGroup) => {
-    const idx = senderGroups.findIndex(g => g.senderEmail === group.senderEmail);
+    const idx = senderGroups.findIndex(g => g.senderEmail.toLowerCase() === group.senderEmail.toLowerCase());
     if (idx !== -1) {
-      setTodoGroups(prev => prev.filter(g => g.senderEmail !== group.senderEmail));
-      setActionHistory(prev => prev.filter(a => a.group.senderEmail !== group.senderEmail));
+      setTodoGroups(prev => prev.filter(g => g.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase()));
+      // Filter out actions related to this sender's emails
+      setActionHistory(prev => prev.filter(a => {
+        if (a.scope === 'group') {
+          return a.group.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase();
+        } else {
+          return a.email.fromEmail.toLowerCase() !== group.senderEmail.toLowerCase();
+        }
+      }));
       setCurrentIndex(idx);
       setShowComplete(false);
       setSidebarOpen(false);
@@ -183,7 +334,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   };
 
   const handleRemoveTodo = (group: SenderGroup) => {
-    setTodoGroups(prev => prev.filter(g => g.senderEmail !== group.senderEmail));
+    setTodoGroups(prev => prev.filter(g => g.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase()));
   };
 
   if (isLoading) {
@@ -234,7 +385,13 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   }
 
   if (showComplete) {
-    const markedRead = actionHistory.filter(a => a.type === 'read').reduce((sum, a) => sum + a.group.emails.length, 0);
+    const markedRead = actionHistory.filter(a => a.type === 'read').reduce((sum, a) => {
+      if (a.scope === 'group') {
+        return sum + a.group.emails.length;
+      } else {
+        return sum + 1;
+      }
+    }, 0);
 
     return (
       <div className={styles.container}>
@@ -299,19 +456,32 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
 
       <div className={styles.mainContent}>
         <div className={styles.cardStack}>
-          <AnimatePresence mode="wait">
-            {currentGroup && (
-              <SenderCard
-                key={currentGroup.senderEmail}
-                group={currentGroup}
-                onSkip={handleSkip}
-                onMarkAsRead={handleMarkAsRead}
-                onTodo={handleTodo}
-                onUndo={actionHistory.length > 0 ? handleUndo : undefined}
-                onEmailAction={handleEmailAction}
-              />
-            )}
-          </AnimatePresence>
+          {currentGroup && (
+            <SenderCard
+              ref={cardRef}
+              key={currentGroup.senderEmail}
+              group={currentGroup}
+              onSkip={handleSkip}
+              onMarkAsRead={handleMarkAsRead}
+              onTodo={handleTodo}
+              onUndo={actionHistory.length > 0 ? handleUndo : undefined}
+              onEmailAction={handleEmailAction}
+            />
+          )}
+          {departingGroup && (
+            <SenderCard
+              ref={departingRef}
+              key={`departing-${departingGroup.senderEmail}`}
+              group={departingGroup}
+              onSkip={() => {}}
+              onMarkAsRead={() => {}}
+              onTodo={() => {}}
+              onEmailAction={() => {}}
+              departDirection={departingDirection}
+              departOffset={departingOffset}
+              onDepartDone={handleDepartingDone}
+            />
+          )}
         </div>
 
         <TodoSidebar

@@ -4,7 +4,6 @@
   background: linear-gradient(145deg, #2a2a4a 0%, #1a1a2e 100%);
   border-radius: 16px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-  cursor: grab;
   user-select: none;
   overflow: hidden;
   display: flex;
@@ -13,8 +12,10 @@
   position: relative;
 }
 
-.card:active {
-  cursor: grabbing;
+.card.departingCard {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .card.single {
@@ -55,6 +56,54 @@
 
 .todoIndicator {
   top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(155, 89, 182, 0.95);
+  color: #fff;
+}
+
+/* Individual email swipe indicators */
+.emailCardWrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.tableRowOuter {
+  position: relative;
+  overflow: hidden;
+}
+
+.emailIndicator {
+  position: absolute;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 10px;
+  letter-spacing: 1px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.emailSkipIndicator {
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 193, 7, 0.95);
+  color: #000;
+}
+
+.emailReadIndicator {
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(76, 175, 80, 0.95);
+  color: #fff;
+}
+
+.emailTodoIndicator {
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(155, 89, 182, 0.95);
@@ -374,13 +423,18 @@
   flex: 1;
 }
 
-.tableRowWrapper {
+.tableRowOuter {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.tableRowWrapper:last-child {
+.tableRowOuter:last-child {
   border-bottom: none;
 }
+
+.tableRowWrapper {
+  background: linear-gradient(145deg, #2a2a4a 0%, #1a1a2e 100%);
+}
+
 
 .tableRow {
   display: flex;

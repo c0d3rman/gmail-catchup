@@ -283,55 +283,138 @@ export async function markAsRead(accessToken: string, messageId: string): Promis
   }
 }
 
+export async function markAsUnread(accessToken: string, messageId: string): Promise<void> {
+  const url = `${GMAIL_API_BASE}/messages/${messageId}/modify`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      addLabelIds: ['UNREAD'],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to mark as unread: ${response.statusText}`);
+  }
+}
+
+export async function markMultipleAsUnread(accessToken: string, messageIds: string[]): Promise<void> {
+  await parallelMap(messageIds, (id) => markAsUnread(accessToken, id), 10);
+}
+
 export async function markMultipleAsRead(accessToken: string, messageIds: string[]): Promise<void> {
   // Mark in parallel with concurrency limit
   await parallelMap(messageIds, (id) => markAsRead(accessToken, id), 10);
 }
 
-// Reader view utilities
+// Reader view utilities - uses markup structure to extract main content
 export function extractReaderContent(html: string): string {
   if (!html) return '';
 
   const div = document.createElement('div');
   div.innerHTML = html;
 
+  // Remove elements by semantic selectors (classes, ids, roles commonly used in email templates)
   const selectorsToRemove = [
-    '[class*="footer"]',
-    '[class*="signature"]',
-    '[class*="disclaimer"]',
-    '[id*="footer"]',
-    '[id*="signature"]',
-    '[class*="unsubscribe"]',
-    '[class*="email-footer"]',
-    'table[class*="footer"]',
+    // Footer patterns
+    '[class*="footer"]', '[id*="footer"]',
+    '[class*="Footer"]', '[id*="Footer"]',
+    // Signatures
+    '[class*="signature"]', '[id*="signature"]',
+    '[class*="Signature"]', '[id*="Signature"]',
+    // Legal/disclaimers
+    '[class*="disclaimer"]', '[class*="legal"]',
+    '[class*="Disclaimer"]', '[class*="Legal"]',
+    // Unsubscribe sections
+    '[class*="unsubscribe"]', '[class*="Unsubscribe"]',
+    '[class*="optout"]', '[class*="opt-out"]',
+    // Social/sharing
+    '[class*="social"]', '[class*="Social"]',
+    '[class*="share"]', '[class*="Share"]',
+    // Privacy/terms
+    '[class*="privacy"]', '[class*="Privacy"]',
+    '[class*="terms"]', '[class*="Terms"]',
+    // Powered by
+    '[class*="powered"]', '[class*="Powered"]',
+    // Preheader (hidden preview text)
+    '[class*="preheader"]', '[class*="Preheader"]',
+    '[class*="preview"]', '[class*="Preview"]',
+    // Hidden elements
+    '[style*="display:none"]', '[style*="display: none"]',
+    '[aria-hidden="true"]',
+    // Tracking pixels
+    'img[width="1"]', 'img[height="1"]',
+    'img[src*="track"]', 'img[src*="pixel"]', 'img[src*="beacon"]',
   ];
 
   selectorsToRemove.forEach(selector => {
-    div.querySelectorAll(selector).forEach(el => el.remove());
+    try {
+      div.querySelectorAll(selector).forEach(el => el.remove());
+    } catch {
+      // Invalid selector, skip
+    }
   });
 
-  const text = div.innerText;
-
-  const patterns = [
-    /^-{2,}\s*Forwarded message\s*-{2,}$/gim,
-    /^From:.*$/gim,
-    /^Date:.*$/gim,
-    /^Subject:.*$/gim,
-    /^To:.*$/gim,
-    /^Sent from my (?:iPhone|iPad|Android|Samsung|Pixel).*$/gim,
-    /^Get Outlook for (?:iOS|Android).*$/gim,
-    /^_{3,}$/gm,
-    /^-{3,}$/gm,
-    /This email and any attachments.*$/gis,
-    /CONFIDENTIALITY NOTICE.*$/gis,
-  ];
-
-  let cleanText = text;
-  patterns.forEach(pattern => {
-    cleanText = cleanText.replace(pattern, '');
+  // Remove very small text (typically legal fine print) - check computed or inline styles
+  div.querySelectorAll('*').forEach(el => {
+    const style = (el as HTMLElement).style;
+    const fontSize = style?.fontSize;
+    if (fontSize) {
+      const size = parseInt(fontSize);
+      if (size > 0 && size < 10) {
+        el.remove();
+      }
+    }
   });
 
-  cleanText = cleanText.replace(/\n{3,}/g, '\n\n').trim();
+  // Remove elements that contain only links (navigation/footer links)
+  div.querySelectorAll('td, div, p').forEach(el => {
+    const text = el.textContent?.trim() ?? '';
+    const links = el.querySelectorAll('a');
+    // If element has multiple links and very little non-link text, it's likely navigation
+    if (links.length >= 3) {
+      let linkText = '';
+      links.forEach(a => linkText += a.textContent ?? '');
+      if (linkText.length > 0 && text.length > 0 && linkText.length / text.length > 0.8) {
+        el.remove();
+      }
+    }
+  });
 
-  return cleanText;
+  // Remove horizontal rules that often separate content from footer
+  // and everything after them if it looks like boilerplate
+  const hrs = div.querySelectorAll('hr');
+  hrs.forEach(hr => {
+    const parent = hr.parentElement;
+    if (parent) {
+      let sibling = hr.nextElementSibling;
+      const toRemove: Element[] = [hr];
+      let textAfterHr = '';
+      while (sibling) {
+        textAfterHr += sibling.textContent ?? '';
+        toRemove.push(sibling);
+        sibling = sibling.nextElementSibling;
+      }
+      // If text after hr is short or contains common footer words, remove it
+      if (textAfterHr.length < 500) {
+        toRemove.forEach(el => el.remove());
+      }
+    }
+  });
+
+  // Get the cleaned text
+  let text = div.innerText;
+
+  // Clean up excessive whitespace
+  text = text
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n /g, '\n')
+    .trim();
+
+  return text;
 }
