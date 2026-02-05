@@ -9,6 +9,7 @@ interface AuthState {
 }
 
 const REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 function parseHashParams(): { accessToken: string; expiresIn: number } | null {
   const hash = window.location.hash;
@@ -76,7 +77,7 @@ export function useGoogleAuth() {
   // Attempt to refresh access token via backend
   const refreshToken = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/auth/refresh', { method: 'POST' });
+      const res = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST' });
       if (!res.ok) return false;
 
       const data = await res.json();
@@ -154,12 +155,12 @@ export function useGoogleAuth() {
   }, [authState.isAuthenticated, authState.accessToken, authState.userEmail]);
 
   const signIn = useCallback(() => {
-    window.location.href = '/api/auth/login';
+    window.location.href = `${API_BASE}/api/auth/login`;
   }, []);
 
   const signOut = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
     } catch {
       // Continue with local sign out even if backend call fails
     }
