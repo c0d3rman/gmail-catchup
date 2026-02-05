@@ -1,0 +1,527 @@
+.card {
+  width: 100%;
+  max-width: 900px;
+  background: linear-gradient(145deg, #2a2a4a 0%, #1a1a2e 100%);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  user-select: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 100px);
+  position: relative;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card.single {
+  max-height: calc(100vh - 80px);
+}
+
+.card.table {
+  max-width: 1000px;
+}
+
+/* Swipe indicators */
+.indicator {
+  position: absolute;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 18px;
+  letter-spacing: 2px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.skipIndicator {
+  top: 50%;
+  left: 24px;
+  transform: translateY(-50%);
+  background: rgba(255, 193, 7, 0.95);
+  color: #000;
+}
+
+.readIndicator {
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
+  background: rgba(76, 175, 80, 0.95);
+  color: #fff;
+}
+
+.todoIndicator {
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(155, 89, 182, 0.95);
+  color: #fff;
+}
+
+/* Sender Header */
+.senderHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(145deg, #2a2a4a 0%, #252545 100%);
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 13px;
+  color: white;
+  flex-shrink: 0;
+}
+
+.senderInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.senderName {
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+}
+
+.senderEmail {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.undoButton {
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.undoButton:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.actionLink {
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.15s;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.actionLink:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+/* View toggle */
+.viewToggle {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.viewToggleBtn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.15s;
+}
+
+.viewToggleBtn.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.viewToggleBtn:hover:not(.active) {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Scrollable content */
+.cardContent {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+}
+
+.footerBtn,
+.footerBtnCenter {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.footerBtn:hover,
+.footerBtnCenter:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.footerBtn:first-child {
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footerBtn:last-child {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.arrow {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* ==================== SINGLE VIEW ==================== */
+.singleView {
+  padding: 16px;
+}
+
+.singleHeader {
+  margin-bottom: 16px;
+}
+
+.singleSubject {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 6px 0;
+  line-height: 1.3;
+}
+
+.singleDate {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ==================== CARD LIST VIEW ==================== */
+.cardList {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.emailCard {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.emailCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 0;
+}
+
+.emailCardToggle {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: white;
+}
+
+.emailCardToggle:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.emailCardMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.emailCardSubject {
+  display: block;
+  font-weight: 500;
+  font-size: 13px;
+  color: #fff;
+  margin-bottom: 3px;
+}
+
+.emailCardDate {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.expandIcon {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}
+
+.emailActions {
+  display: flex;
+  gap: 4px;
+}
+
+.emailActionBtn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emailActionBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.emailCardSnippet {
+  padding: 0 12px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.emailCardBody {
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ==================== TABLE VIEW ==================== */
+.tableView {
+  display: flex;
+  flex-direction: column;
+}
+
+.tableHeader {
+  display: flex;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tableBody {
+  flex: 1;
+}
+
+.tableRowWrapper {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tableRowWrapper:last-child {
+  border-bottom: none;
+}
+
+.tableRow {
+  display: flex;
+  align-items: center;
+}
+
+.tableRowContent {
+  flex: 1;
+  display: flex;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: white;
+  transition: background 0.15s;
+}
+
+.tableRowContent:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tableRowExpanded {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tableColSubject {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tableSubjectText {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tableSnippet {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tableColDate {
+  width: 60px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: right;
+}
+
+.tableColActions {
+  display: flex;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.tableActionBtn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tableActionBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.tableExpandedContent {
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 600px) {
+  .card {
+    border-radius: 12px;
+    max-height: calc(100vh - 90px);
+  }
+
+  .senderHeader {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+  }
+
+  .avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
+  }
+
+  .headerActions {
+    width: 100%;
+    margin-top: 8px;
+    justify-content: flex-end;
+  }
+
+  .singleView {
+    padding: 12px;
+  }
+
+  .singleSubject {
+    font-size: 16px;
+  }
+
+  .cardList {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .tableColDate {
+    width: 50px;
+  }
+
+  .footer {
+    flex-wrap: wrap;
+  }
+
+  .footerBtn,
+  .footerBtnCenter {
+    padding: 10px 8px;
+    font-size: 11px;
+  }
+}
