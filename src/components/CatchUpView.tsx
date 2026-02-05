@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SenderCard, type SenderCardHandle, type DragOffset } from './SenderCard';
 import { TodoSidebar } from './TodoSidebar';
-import { fetchAllUnreadEmails, groupEmailsBySender, markAsRead, markMultipleAsRead, markMultipleAsUnread, markAsUnread, type LoadingProgress } from '../services/gmail';
+import { fetchAllUnreadEmails, groupEmailsBySender, markAsRead, markMultipleAsRead, markMultipleAsUnread, markAsUnread, AuthExpiredError, type LoadingProgress } from '../services/gmail';
+import { loadPersistedState, savePersistedState, clearPersistedState } from '../hooks/usePersistedState';
 import type { SenderGroup, ParsedEmail } from '../types/gmail';
 import styles from './CatchUpView.module.css';
 
@@ -30,9 +31,11 @@ type EmailAction = {
 
 type Action = GroupAction | EmailAction;
 
+const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+
 export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewProps) {
   const [senderGroups, setSenderGroups] = useState<SenderGroup[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<LoadingProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -43,10 +46,63 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   const [departingGroup, setDepartingGroup] = useState<SenderGroup | null>(null);
   const [departingDirection, setDepartingDirection] = useState<'left' | 'right' | 'down'>('left');
   const [departingOffset, setDepartingOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const [reviewingTodos, setReviewingTodos] = useState(false);
+  const [lastFetchTime, setLastFetchTime] = useState(0);
+  const [showRefreshDialog, setShowRefreshDialog] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const cardRef = useRef<SenderCardHandle>(null);
   const departingRef = useRef<SenderCardHandle>(null);
 
-  const loadEmails = useCallback(async () => {
+  // --- Persistence ---
+
+  // Load persisted state on mount
+  useEffect(() => {
+    const saved = loadPersistedState();
+    if (saved && saved.senderGroups.length > 0) {
+      setSenderGroups(saved.senderGroups);
+      setCurrentIndex(saved.currentIndex);
+      setTodoGroups(saved.todoGroups);
+      setReviewingTodos(saved.reviewingTodos);
+      setLastFetchTime(saved.lastFetchTime);
+
+      // Check if main queue was exhausted
+      if (!saved.reviewingTodos && saved.currentIndex >= saved.senderGroups.length) {
+        if (saved.todoGroups.length > 0) {
+          setReviewingTodos(true);
+        } else {
+          setShowComplete(true);
+        }
+      } else if (saved.reviewingTodos && saved.todoGroups.length === 0) {
+        setShowComplete(true);
+      }
+
+      // Suggest refresh if stale
+      if (Date.now() - saved.lastFetchTime > THREE_HOURS_MS) {
+        setShowRefreshDialog(true);
+      }
+      setInitialized(true);
+    } else {
+      // No saved state, fetch fresh
+      setInitialized(true);
+      fetchEmails();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save state on changes (after initialization)
+  useEffect(() => {
+    if (!initialized || isLoading) return;
+    savePersistedState({
+      senderGroups,
+      currentIndex,
+      todoGroups,
+      reviewingTodos,
+      lastFetchTime,
+    });
+  }, [senderGroups, currentIndex, todoGroups, reviewingTodos, lastFetchTime, initialized, isLoading]);
+
+  // --- Data fetching ---
+
+  const fetchEmails = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setLoadingProgress(null);
@@ -54,7 +110,6 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     try {
       const emails = await fetchAllUnreadEmails(accessToken, (progress) => {
         setLoadingProgress(prev => {
-          // Never let the loaded count decrease
           if (prev && prev.phase === progress.phase && progress.loaded < prev.loaded) {
             return prev;
           }
@@ -66,36 +121,43 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
       setCurrentIndex(0);
       setTodoGroups([]);
       setActionHistory([]);
+      setReviewingTodos(false);
       setShowComplete(false);
+      setLastFetchTime(Date.now());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load emails');
+      if (err instanceof AuthExpiredError) {
+        setError('__auth_expired__');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to load emails');
+      }
     } finally {
       setIsLoading(false);
     }
   }, [accessToken]);
 
-  useEffect(() => {
-    loadEmails();
-  }, [loadEmails]);
+  const handleRefresh = () => {
+    clearPersistedState();
+    fetchEmails();
+  };
 
-  const currentGroup = senderGroups[currentIndex];
+  // --- Current group ---
 
-  // Keyboard shortcuts
+  const currentGroup = reviewingTodos ? todoGroups[0] : senderGroups[currentIndex];
+
+  // --- Keyboard shortcuts ---
+
   useEffect(() => {
     if (isLoading || showComplete || !currentGroup) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      // Ctrl+Z / Cmd+Z for undo
       if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         handleUndo();
         return;
       }
 
-      // Don't capture arrow keys with any modifier
       if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
 
       switch (e.key) {
@@ -121,12 +183,31 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   });
-  const remainingGroups = senderGroups.length - currentIndex;
-  const remainingEmails = senderGroups.slice(currentIndex).reduce((sum, g) => sum + g.emails.length, 0);
+
+  // --- Counts ---
+
+  const remainingGroups = reviewingTodos
+    ? todoGroups.length
+    : senderGroups.length - currentIndex;
+  const remainingEmails = reviewingTodos
+    ? todoGroups.reduce((sum, g) => sum + g.emails.length, 0)
+    : senderGroups.slice(currentIndex).reduce((sum, g) => sum + g.emails.length, 0);
+
+  // --- Navigation ---
 
   const advanceToNext = () => {
+    if (reviewingTodos) {
+      setTodoGroups(prev => {
+        const next = prev.slice(1);
+        if (next.length === 0) setShowComplete(true);
+        return next;
+      });
+      return;
+    }
     if (currentIndex < senderGroups.length - 1) {
       setCurrentIndex(prev => prev + 1);
+    } else if (todoGroups.length > 0) {
+      setReviewingTodos(true);
     } else {
       setShowComplete(true);
     }
@@ -143,15 +224,18 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     setDepartingGroup(null);
   };
 
+  // --- Actions ---
+
   const handleMarkAsRead = (offset?: DragOffset) => {
     if (!currentGroup) return;
 
-    setActionHistory(prev => [...prev, { scope: 'group', type: 'read', group: currentGroup, groupIndex: currentIndex }]);
+    setActionHistory(prev => [...prev, { scope: 'group', type: 'read', group: currentGroup, groupIndex: reviewingTodos ? -1 : currentIndex }]);
     departCurrentCard('right', offset);
     advanceToNext();
 
     const messageIds = currentGroup.emails.map(e => e.id);
     markMultipleAsRead(accessToken, messageIds).catch(err => {
+      if (err instanceof AuthExpiredError) { setError('__auth_expired__'); return; }
       console.error('Failed to mark as read:', err);
     });
   };
@@ -159,7 +243,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   const handleSkip = (offset?: DragOffset) => {
     if (!currentGroup) return;
 
-    setActionHistory(prev => [...prev, { scope: 'group', type: 'skip', group: currentGroup, groupIndex: currentIndex }]);
+    setActionHistory(prev => [...prev, { scope: 'group', type: 'skip', group: currentGroup, groupIndex: reviewingTodos ? -1 : currentIndex }]);
     departCurrentCard('left', offset);
     advanceToNext();
   };
@@ -167,9 +251,18 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   const handleTodo = (offset?: DragOffset) => {
     if (!currentGroup) return;
 
+    if (reviewingTodos) {
+      // Move to end of todo queue
+      departCurrentCard('down', offset);
+      setTodoGroups(prev => {
+        if (prev.length <= 1) return prev;
+        return [...prev.slice(1), prev[0]];
+      });
+      return;
+    }
+
     setActionHistory(prev => [...prev, { scope: 'group', type: 'todo', group: currentGroup, groupIndex: currentIndex }]);
     departCurrentCard('down', offset);
-    // Merge with existing todo group from same sender
     setTodoGroups(prev => {
       const existingIdx = prev.findIndex(g => g.senderEmail.toLowerCase() === currentGroup.senderEmail.toLowerCase());
       if (existingIdx !== -1) {
@@ -192,8 +285,24 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     setActionHistory(prev => prev.slice(0, -1));
 
     if (lastAction.scope === 'group') {
+      // Undo from todo review mode
+      if (lastAction.groupIndex === -1) {
+        if (lastAction.type === 'read') {
+          try {
+            const messageIds = lastAction.group.emails.map(e => e.id);
+            await markMultipleAsUnread(accessToken, messageIds);
+          } catch (err) {
+            if (err instanceof AuthExpiredError) { setError('__auth_expired__'); return; }
+            console.error('Failed to mark as unread:', err);
+          }
+        }
+        // Re-add to front of todo queue
+        setTodoGroups(prev => [lastAction.group, ...prev]);
+        setShowComplete(false);
+        return;
+      }
+
       if (lastAction.type === 'todo') {
-        // Remove the group's emails from todo
         setTodoGroups(prev => {
           return prev.map(g => {
             if (g.senderEmail.toLowerCase() === lastAction.group.senderEmail.toLowerCase()) {
@@ -212,10 +321,15 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
           const messageIds = lastAction.group.emails.map(e => e.id);
           await markMultipleAsUnread(accessToken, messageIds);
         } catch (err) {
+          if (err instanceof AuthExpiredError) { setError('__auth_expired__'); return; }
           console.error('Failed to mark as unread:', err);
         }
       }
 
+      // If we were reviewing todos, go back to inbox mode
+      if (reviewingTodos) {
+        setReviewingTodos(false);
+      }
       setCurrentIndex(prev => prev - 1);
       setShowComplete(false);
     } else {
@@ -223,7 +337,6 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
       const { email, groupIndex, originalGroup } = lastAction;
 
       if (lastAction.type === 'todo') {
-        // Remove email from todo groups
         setTodoGroups(prev => {
           return prev.map(g => {
             if (g.senderEmail.toLowerCase() === email.fromEmail.toLowerCase()) {
@@ -240,16 +353,15 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
         try {
           await markAsUnread(accessToken, email.id);
         } catch (err) {
+          if (err instanceof AuthExpiredError) { setError('__auth_expired__'); return; }
           console.error('Failed to mark as unread:', err);
         }
       }
 
-      // Re-add the email to its original group
       setSenderGroups(prev => {
         const updated = [...prev];
         const group = updated[groupIndex];
         if (group && group.senderEmail.toLowerCase() === originalGroup.senderEmail.toLowerCase()) {
-          // Add email back, sorted by date
           const emails = [...group.emails, email].sort((a, b) => b.date.getTime() - a.date.getTime());
           updated[groupIndex] = { ...group, emails };
         }
@@ -264,12 +376,11 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     const email = currentGroup.emails.find(e => e.id === emailId);
     if (!email) return;
 
-    // Track action in history for undo
     setActionHistory(prev => [...prev, {
       scope: 'email',
       type: action,
       email,
-      groupIndex: currentIndex,
+      groupIndex: reviewingTodos ? -1 : currentIndex,
       originalGroup: currentGroup,
     }]);
 
@@ -277,12 +388,12 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
       try {
         await markAsRead(accessToken, emailId);
       } catch (err) {
+        if (err instanceof AuthExpiredError) { setError('__auth_expired__'); return; }
         console.error('Failed to mark as read:', err);
       }
     }
 
-    if (action === 'todo') {
-      // Merge with existing todo group from same sender
+    if (action === 'todo' && !reviewingTodos) {
       setTodoGroups(prev => {
         const existingIdx = prev.findIndex(g => g.senderEmail.toLowerCase() === email.fromEmail.toLowerCase());
         if (existingIdx !== -1) {
@@ -301,43 +412,50 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
       });
     }
 
-    // Remove the email from the current group
-    const updatedEmails = currentGroup.emails.filter(e => e.id !== emailId);
-
-    if (updatedEmails.length === 0) {
-      // No more emails in this group, move to next
-      advanceToNext();
+    if (reviewingTodos) {
+      // Remove email from the current todo group
+      const updatedEmails = currentGroup.emails.filter(e => e.id !== emailId);
+      if (updatedEmails.length === 0) {
+        advanceToNext();
+      } else {
+        setTodoGroups(prev => {
+          const updated = [...prev];
+          updated[0] = { ...updated[0], emails: updatedEmails };
+          return updated;
+        });
+      }
     } else {
-      // Update the group with remaining emails
-      const updatedGroups = [...senderGroups];
-      updatedGroups[currentIndex] = { ...currentGroup, emails: updatedEmails };
-      setSenderGroups(updatedGroups);
+      const updatedEmails = currentGroup.emails.filter(e => e.id !== emailId);
+      if (updatedEmails.length === 0) {
+        advanceToNext();
+      } else {
+        const updatedGroups = [...senderGroups];
+        updatedGroups[currentIndex] = { ...currentGroup, emails: updatedEmails };
+        setSenderGroups(updatedGroups);
+      }
     }
   };
 
   const handleTodoClick = (group: SenderGroup) => {
-    const idx = senderGroups.findIndex(g => g.senderEmail.toLowerCase() === group.senderEmail.toLowerCase());
-    if (idx !== -1) {
-      setTodoGroups(prev => prev.filter(g => g.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase()));
-      // Filter out actions related to this sender's emails
-      setActionHistory(prev => prev.filter(a => {
-        if (a.scope === 'group') {
-          return a.group.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase();
-        } else {
-          return a.email.fromEmail.toLowerCase() !== group.senderEmail.toLowerCase();
-        }
-      }));
-      setCurrentIndex(idx);
-      setShowComplete(false);
-      setSidebarOpen(false);
-    }
+    // Insert the todo group at current position
+    setTodoGroups(prev => prev.filter(g => g.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase()));
+    setSenderGroups(prev => {
+      const filtered = prev.filter(g => g.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase());
+      const insertAt = Math.min(currentIndex, filtered.length);
+      return [...filtered.slice(0, insertAt), group, ...filtered.slice(insertAt)];
+    });
+    setShowComplete(false);
+    setReviewingTodos(false);
+    setSidebarOpen(false);
   };
 
   const handleRemoveTodo = (group: SenderGroup) => {
     setTodoGroups(prev => prev.filter(g => g.senderEmail.toLowerCase() !== group.senderEmail.toLowerCase()));
   };
 
-  if (isLoading) {
+  // --- Render ---
+
+  if (!initialized || isLoading) {
     return (
       <div className={styles.container}>
         <div className={styles.loading}>
@@ -357,14 +475,42 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   }
 
   if (error) {
+    const isAuthExpired = error === '__auth_expired__';
     return (
       <div className={styles.container}>
         <div className={styles.error}>
-          <h2>Something went wrong</h2>
-          <p>{error}</p>
-          <button onClick={loadEmails} className={styles.retryButton}>
-            Try Again
-          </button>
+          <h2>{isAuthExpired ? 'Session expired' : 'Something went wrong'}</h2>
+          <p>{isAuthExpired ? 'Your Google session has expired. Please sign in again.' : error}</p>
+          {isAuthExpired ? (
+            <button onClick={onSignOut} className={styles.retryButton}>
+              Sign In Again
+            </button>
+          ) : (
+            <button onClick={fetchEmails} className={styles.retryButton}>
+              Try Again
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (showRefreshDialog) {
+    const hoursAgo = Math.round((Date.now() - lastFetchTime) / (60 * 60 * 1000));
+    return (
+      <div className={styles.container}>
+        <div className={styles.refreshDialog}>
+          <h2>Welcome back</h2>
+          <p>Your emails were last fetched {hoursAgo} hour{hoursAgo !== 1 ? 's' : ''} ago.</p>
+          <p>Would you like to fetch fresh emails? This will discard your current progress.</p>
+          <div className={styles.dialogButtons}>
+            <button onClick={() => { setShowRefreshDialog(false); handleRefresh(); }} className={styles.refreshButton}>
+              Fetch Fresh Emails
+            </button>
+            <button onClick={() => setShowRefreshDialog(false)} className={styles.secondaryButton}>
+              Continue Where I Left Off
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -376,7 +522,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>Inbox Zero</div>
           <p>You have no unread emails!</p>
-          <button onClick={loadEmails} className={styles.refreshButton}>
+          <button onClick={handleRefresh} className={styles.refreshButton}>
             Refresh
           </button>
         </div>
@@ -399,29 +545,12 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
           <div className={styles.completeIcon}>Done</div>
           <h2>All caught up!</h2>
           <p>
-            {markedRead > 0 && <>Marked {markedRead} email{markedRead !== 1 ? 's' : ''} as read. </>}
-            {todoGroups.length > 0 && <>{todoGroups.length} item{todoGroups.length !== 1 ? 's' : ''} in your todo list.</>}
+            {markedRead > 0 && <>Marked {markedRead} email{markedRead !== 1 ? 's' : ''} as read.</>}
           </p>
 
-          {todoGroups.length > 0 && (
-            <div className={styles.todoList}>
-              <h3>Your Todos</h3>
-              {todoGroups.map(group => (
-                <button
-                  key={group.senderEmail}
-                  className={styles.todoItem}
-                  onClick={() => handleTodoClick(group)}
-                >
-                  <span className={styles.todoSender}>{group.senderName}</span>
-                  <span className={styles.todoCount}>{group.emails.length}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className={styles.completeActions}>
-            <button onClick={loadEmails} className={styles.refreshButton}>
-              Check for New Emails
+            <button onClick={handleRefresh} className={styles.refreshButton}>
+              Fetch Fresh Emails
             </button>
           </div>
         </div>
@@ -439,11 +568,12 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
           </button>
         </div>
         <div className={styles.headerCenter}>
+          {reviewingTodos && <span className={styles.todoLabel}>Todos</span>}
           <span className={styles.remaining}>{remainingEmails} emails</span>
-          <span className={styles.senders}>{remainingGroups} senders</span>
+          <span className={styles.senders}>{remainingGroups} {reviewingTodos ? 'todos' : 'senders'}</span>
         </div>
         <div className={styles.headerRight}>
-          {todoGroups.length > 0 && (
+          {!reviewingTodos && todoGroups.length > 0 && (
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className={styles.todoToggle}
@@ -459,7 +589,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
           {currentGroup && (
             <SenderCard
               ref={cardRef}
-              key={currentGroup.senderEmail}
+              key={currentGroup.senderEmail + (reviewingTodos ? '-todo' : '')}
               group={currentGroup}
               onSkip={handleSkip}
               onMarkAsRead={handleMarkAsRead}
@@ -484,13 +614,15 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
           )}
         </div>
 
-        <TodoSidebar
-          todos={todoGroups}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          onTodoClick={handleTodoClick}
-          onRemoveTodo={handleRemoveTodo}
-        />
+        {!reviewingTodos && (
+          <TodoSidebar
+            todos={todoGroups}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            onTodoClick={handleTodoClick}
+            onRemoveTodo={handleRemoveTodo}
+          />
+        )}
       </div>
     </div>
   );

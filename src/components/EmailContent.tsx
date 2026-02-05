@@ -43,7 +43,7 @@ function HtmlIframe({ html }: { html: string }) {
 
   const srcdoc = useMemo(() => {
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="only light"><style>
-body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#222;background:#fff;word-wrap:break-word;overflow-wrap:break-word}
+body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#222;background:#fff;word-wrap:break-word;overflow-wrap:break-word;overflow:hidden}
 img{max-width:100%!important;height:auto!important}
 a{color:#1a73e8}
 table{max-width:100%!important}
@@ -58,7 +58,9 @@ pre{padding:12px;overflow-x:auto}
     const iframe = iframeRef.current;
     if (!iframe) return;
 
-    const handleLoad = () => {
+    let observer: ResizeObserver | null = null;
+
+    const updateHeight = () => {
       try {
         const doc = iframe.contentDocument;
         if (doc) {
@@ -70,8 +72,26 @@ pre{padding:12px;overflow-x:auto}
       }
     };
 
+    const handleLoad = () => {
+      updateHeight();
+
+      // Watch for layout changes inside the iframe (images loading, fonts, etc.)
+      try {
+        const doc = iframe.contentDocument;
+        if (doc?.body) {
+          observer = new ResizeObserver(updateHeight);
+          observer.observe(doc.body);
+        }
+      } catch {
+        // cross-origin, ignore
+      }
+    };
+
     iframe.addEventListener('load', handleLoad);
-    return () => iframe.removeEventListener('load', handleLoad);
+    return () => {
+      iframe.removeEventListener('load', handleLoad);
+      observer?.disconnect();
+    };
   }, [srcdoc]);
 
   return (
@@ -79,6 +99,7 @@ pre{padding:12px;overflow-x:auto}
       ref={iframeRef}
       srcDoc={srcdoc}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      scrolling="no"
       className={styles.htmlIframe}
       style={{ height }}
       title="Email content"

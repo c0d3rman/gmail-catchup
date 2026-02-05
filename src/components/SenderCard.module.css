@@ -397,8 +397,6 @@
   padding: 12px;
   background: rgba(0, 0, 0, 0.15);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
-  max-height: 300px;
-  overflow-y: auto;
 }
 
 /* ==================== TABLE VIEW ==================== */
@@ -487,11 +485,12 @@
 }
 
 .tableColDate {
-  width: 60px;
+  width: 70px;
   flex-shrink: 0;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.5);
   text-align: right;
+  white-space: nowrap;
 }
 
 .tableColActions {
@@ -520,12 +519,16 @@
   color: #fff;
 }
 
-.tableExpandedContent {
-  padding: 12px;
+.tableExpandedDate {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 8px 12px 0;
   background: rgba(0, 0, 0, 0.15);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
-  max-height: 250px;
-  overflow-y: auto;
+}
+
+.tableExpandedContent {
+  background: rgba(0, 0, 0, 0.15);
 }
 
 /* ==================== RESPONSIVE ==================== */

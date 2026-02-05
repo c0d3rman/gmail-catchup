@@ -3,6 +3,7 @@
   border: none;
   border-radius: 8px;
   display: block;
+  transition: height 0.15s ease-out;
 }
 
 .textContent {

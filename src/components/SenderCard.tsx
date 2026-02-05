@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { motion, useAnimation, type PanInfo } from 'framer-motion';
+import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion';
 import { formatDistanceToNow, format } from 'date-fns';
 import type { SenderGroup, ParsedEmail } from '../types/gmail';
 import { EmailContent } from './EmailContent';
@@ -408,13 +408,24 @@ function EmailCard({ email, isExpanded, onToggle, readerView, onAction }: EmailC
           </div>
         </div>
 
-        {isExpanded ? (
-          <div className={styles.emailCardBody}>
-            <EmailContent email={email} readerView={readerView} />
-          </div>
-        ) : (
+        {!isExpanded && (
           <div className={styles.emailCardSnippet}>{decodeHtmlEntities(email.snippet)}</div>
         )}
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              key="body"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <div className={styles.emailCardBody}>
+                <EmailContent email={email} readerView={readerView} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );
@@ -534,7 +545,7 @@ function TableRow({ email, isExpanded, onToggle, readerView, onAction }: TableRo
               <span className={styles.tableSnippet}>{decodeHtmlEntities(email.snippet)}</span>
             </span>
             <span className={styles.tableColDate}>
-              {format(email.date, 'MMM d')}
+              {formatDistanceToNow(email.date, { addSuffix: false })}
             </span>
           </button>
           <div className={styles.tableColActions}>
@@ -558,11 +569,24 @@ function TableRow({ email, isExpanded, onToggle, readerView, onAction }: TableRo
             </a>
           </div>
         </div>
-        {isExpanded && (
-          <div className={styles.tableExpandedContent}>
-            <EmailContent email={email} readerView={readerView} />
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              key="expanded"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <div className={styles.tableExpandedContent}>
+                <div className={styles.tableExpandedDate}>
+                  {format(email.date, 'MMM d, yyyy \'at\' h:mm a')}
+                </div>
+                <EmailContent email={email} readerView={readerView} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

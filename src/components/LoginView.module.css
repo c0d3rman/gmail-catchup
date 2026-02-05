@@ -41,105 +41,6 @@
   font-size: 14px;
 }
 
-.setup {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
-  padding: 24px;
-  text-align: left;
-  margin-bottom: 24px;
-}
-
-.setup h2 {
-  color: white;
-  font-size: 20px;
-  margin-bottom: 12px;
-}
-
-.setupDescription {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 20px;
-}
-
-.instructions {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.instructions h3 {
-  color: white;
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-
-.instructions ol {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  line-height: 1.8;
-  padding-left: 20px;
-  margin: 0;
-}
-
-.instructions a {
-  color: #3498db;
-  text-decoration: none;
-}
-
-.instructions a:hover {
-  text-decoration: underline;
-}
-
-.instructions code {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.input {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 14px 16px;
-  color: white;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.input:focus {
-  border-color: #3498db;
-}
-
-.input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.saveButton {
-  background: linear-gradient(145deg, #3498db, #2980b9);
-  border: none;
-  color: white;
-  padding: 14px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.saveButton:hover {
-  transform: scale(1.02);
-}
-
 .signIn {
   display: flex;
   flex-direction: column;
@@ -171,19 +72,6 @@
 
 .googleIcon {
   flex-shrink: 0;
-}
-
-.changeClientIdButton {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 13px;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.changeClientIdButton:hover {
-  color: rgba(255, 255, 255, 0.8);
 }
 
 .features {
@@ -222,15 +110,6 @@
 
   .tagline {
     font-size: 14px;
-  }
-
-  .setup {
-    padding: 16px;
-  }
-
-  .instructions ol {
-    font-size: 12px;
-    line-height: 1.7;
   }
 
   .features {

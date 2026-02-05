@@ -7,11 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "start": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
     "@use-gesture/react": "^10.3.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
     "framer-motion": "^12.31.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

@@ -2,6 +2,13 @@ import type { GmailMessage, GmailMessagePart, ParsedEmail, GmailListResponse, Se
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
+export class AuthExpiredError extends Error {
+  constructor() {
+    super('Session expired. Please sign in again.');
+    this.name = 'AuthExpiredError';
+  }
+}
+
 function parseEmailAddress(from: string): { name: string; email: string } {
   const match = from.match(/^(.+?)\s*<(.+?)>$/);
   if (match) {
@@ -112,6 +119,10 @@ async function fetchMessage(
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
+    if (response.status === 401) {
+      throw new AuthExpiredError();
+    }
+
     if (response.status === 429) {
       // Rate limited - exponential backoff
       if (retryCount < 3) {
@@ -186,6 +197,10 @@ export async function fetchAllUnreadEmails(
     const listResponse = await fetch(listUrl.toString(), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    if (listResponse.status === 401) {
+      throw new AuthExpiredError();
+    }
 
     if (!listResponse.ok) {
       throw new Error(`Failed to fetch emails: ${listResponse.statusText}`);
@@ -278,6 +293,7 @@ export async function markAsRead(accessToken: string, messageId: string): Promis
     }),
   });
 
+  if (response.status === 401) throw new AuthExpiredError();
   if (!response.ok) {
     throw new Error(`Failed to mark as read: ${response.statusText}`);
   }
@@ -297,6 +313,7 @@ export async function markAsUnread(accessToken: string, messageId: string): Prom
     }),
   });
 
+  if (response.status === 401) throw new AuthExpiredError();
   if (!response.ok) {
     throw new Error(`Failed to mark as unread: ${response.statusText}`);
   }
