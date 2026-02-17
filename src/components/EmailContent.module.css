@@ -12,4 +12,7 @@
   color: rgba(255, 255, 255, 0.85);
   white-space: pre-wrap;
   word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
 }

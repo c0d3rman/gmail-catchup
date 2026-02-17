@@ -86,9 +86,7 @@ export const SenderCard = forwardRef<SenderCardHandle, SenderCardProps>(
 
   const handleDrag = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const { offset } = info;
-    if (Math.abs(offset.y) > Math.abs(offset.x) && offset.y > 60) {
-      setSwipeDirection('down');
-    } else if (offset.x > 60) {
+    if (offset.x > 60) {
       setSwipeDirection('right');
     } else if (offset.x < -60) {
       setSwipeDirection('left');
@@ -104,14 +102,11 @@ export const SenderCard = forwardRef<SenderCardHandle, SenderCardProps>(
 
     const swipedRight = offset.x > threshold || (offset.x > 80 && velocity.x > velocityThreshold);
     const swipedLeft = offset.x < -threshold || (offset.x < -80 && velocity.x < -velocityThreshold);
-    const swipedDown = offset.y > threshold || (offset.y > 80 && velocity.y > velocityThreshold);
 
     // dragElastic scales the visual position relative to the raw offset
     const elastic = 0.7;
-    const dragOffset = { x: offset.x * elastic, y: offset.y * elastic };
-    if (swipedDown && Math.abs(offset.y) > Math.abs(offset.x)) {
-      onTodo(dragOffset);
-    } else if (swipedRight) {
+    const dragOffset = { x: offset.x * elastic, y: 0 };
+    if (swipedRight) {
       onMarkAsRead(dragOffset);
     } else if (swipedLeft) {
       onSkip(dragOffset);
@@ -148,15 +143,15 @@ export const SenderCard = forwardRef<SenderCardHandle, SenderCardProps>(
     <motion.div
       ref={cardRef}
       className={`${styles.card} ${styles[viewMode]} ${departDirection ? styles.departingCard : ''}`}
-      drag={!departDirection}
-      dragConstraints={!departDirection ? { left: 0, right: 0, top: 0, bottom: 0 } : undefined}
+      drag={!departDirection ? 'x' : false}
+      dragConstraints={!departDirection ? { left: 0, right: 0 } : undefined}
       dragElastic={0.7}
       onDrag={!departDirection ? handleDrag : undefined}
       onDragEnd={!departDirection ? handleDragEnd : undefined}
       animate={controls}
       initial={departDirection ? { x: departOffset?.x ?? 0, y: departOffset?.y ?? 0 } : { scale: 0.95, opacity: 0 }}
       whileDrag={!departDirection ? { cursor: 'grabbing' } : undefined}
-      style={{ touchAction: 'none' }}
+      style={{ touchAction: 'pan-y' }}
     >
       {swipeDirection === 'left' && (
         <div className={`${styles.indicator} ${styles.skipIndicator}`}>SKIP</div>
@@ -319,9 +314,7 @@ function EmailCard({ email, isExpanded, onToggle, readerView, onAction }: EmailC
   const handleEmailDrag = (e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     e.stopPropagation();
     const { offset } = info;
-    if (Math.abs(offset.y) > Math.abs(offset.x) && offset.y > 30) {
-      setSwipeDir('down');
-    } else if (offset.x > 40) {
+    if (offset.x > 40) {
       setSwipeDir('right');
     } else if (offset.x < -40) {
       setSwipeDir('left');
@@ -338,12 +331,8 @@ function EmailCard({ email, isExpanded, onToggle, readerView, onAction }: EmailC
 
     const swipedRight = offset.x > threshold || (offset.x > 50 && velocity.x > velocityThreshold);
     const swipedLeft = offset.x < -threshold || (offset.x < -50 && velocity.x < -velocityThreshold);
-    const swipedDown = offset.y > threshold || (offset.y > 50 && velocity.y > velocityThreshold);
 
-    if (swipedDown && Math.abs(offset.y) > Math.abs(offset.x)) {
-      await controls.start({ y: 200, opacity: 0, transition: { duration: 0.15 } });
-      onAction(email.id, 'todo');
-    } else if (swipedRight) {
+    if (swipedRight) {
       await controls.start({ x: 400, opacity: 0, transition: { duration: 0.15 } });
       onAction(email.id, 'read');
     } else if (swipedLeft) {
@@ -368,13 +357,13 @@ function EmailCard({ email, isExpanded, onToggle, readerView, onAction }: EmailC
       )}
       <motion.div
         className={styles.emailCard}
-        drag
-        dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.5}
         onDrag={handleEmailDrag}
         onDragEnd={handleEmailDragEnd}
         animate={controls}
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'pan-y' }}
       >
         <div className={styles.emailCardHeader}>
           <button className={styles.emailCardToggle} onClick={onToggle}>
@@ -478,9 +467,7 @@ function TableRow({ email, isExpanded, onToggle, readerView, onAction }: TableRo
   const handleRowDrag = (e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     e.stopPropagation();
     const { offset } = info;
-    if (Math.abs(offset.y) > Math.abs(offset.x) && offset.y > 30) {
-      setSwipeDir('down');
-    } else if (offset.x > 40) {
+    if (offset.x > 40) {
       setSwipeDir('right');
     } else if (offset.x < -40) {
       setSwipeDir('left');
@@ -497,12 +484,8 @@ function TableRow({ email, isExpanded, onToggle, readerView, onAction }: TableRo
 
     const swipedRight = offset.x > threshold || (offset.x > 50 && velocity.x > velocityThreshold);
     const swipedLeft = offset.x < -threshold || (offset.x < -50 && velocity.x < -velocityThreshold);
-    const swipedDown = offset.y > threshold || (offset.y > 50 && velocity.y > velocityThreshold);
 
-    if (swipedDown && Math.abs(offset.y) > Math.abs(offset.x)) {
-      await controls.start({ y: 200, opacity: 0, transition: { duration: 0.15 } });
-      onAction(email.id, 'todo');
-    } else if (swipedRight) {
+    if (swipedRight) {
       await controls.start({ x: 400, opacity: 0, transition: { duration: 0.15 } });
       onAction(email.id, 'read');
     } else if (swipedLeft) {
@@ -527,13 +510,13 @@ function TableRow({ email, isExpanded, onToggle, readerView, onAction }: TableRo
       )}
       <motion.div
         className={styles.tableRowWrapper}
-        drag
-        dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.5}
         onDrag={handleRowDrag}
         onDragEnd={handleRowDragEnd}
         animate={controls}
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'pan-y' }}
       >
         <div className={styles.tableRow}>
           <button

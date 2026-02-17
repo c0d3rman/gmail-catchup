@@ -1,13 +1,27 @@
 import type { SenderGroup, ParsedEmail } from '../types/gmail';
 
-const STORAGE_KEY = 'gmail_catchup_state';
+const DB_NAME = 'gmail_catchup';
+const DB_VERSION = 1;
+const STORE_NAME = 'state';
+const STATE_KEY = 'persisted';
 
-interface PersistedState {
+export interface PersistedState {
   senderGroups: SenderGroup[];
   currentIndex: number;
   todoGroups: SenderGroup[];
   reviewingTodos: boolean;
   lastFetchTime: number;
+}
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE_NAME);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
 function reviveEmail(e: ParsedEmail & { date: string }): ParsedEmail {
@@ -22,31 +36,74 @@ function reviveGroup(g: SenderGroup): SenderGroup {
   };
 }
 
-export function loadPersistedState(): PersistedState | null {
+export async function loadPersistedState(): Promise<PersistedState | null> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return {
-      senderGroups: parsed.senderGroups.map(reviveGroup),
-      currentIndex: parsed.currentIndex,
-      todoGroups: parsed.todoGroups.map(reviveGroup),
-      reviewingTodos: parsed.reviewingTodos ?? false,
-      lastFetchTime: parsed.lastFetchTime ?? 0,
-    };
+    // Migrate from localStorage if present
+    const legacy = localStorage.getItem('gmail_catchup_state');
+    if (legacy) {
+      localStorage.removeItem('gmail_catchup_state');
+      const parsed = JSON.parse(legacy);
+      const state: PersistedState = {
+        senderGroups: parsed.senderGroups.map(reviveGroup),
+        currentIndex: parsed.currentIndex,
+        todoGroups: parsed.todoGroups.map(reviveGroup),
+        reviewingTodos: parsed.reviewingTodos ?? false,
+        lastFetchTime: parsed.lastFetchTime ?? 0,
+      };
+      await savePersistedState(state);
+      return state;
+    }
+
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(STATE_KEY);
+      req.onsuccess = () => {
+        db.close();
+        if (!req.result) { resolve(null); return; }
+        try {
+          resolve({
+            senderGroups: req.result.senderGroups.map(reviveGroup),
+            currentIndex: req.result.currentIndex,
+            todoGroups: req.result.todoGroups.map(reviveGroup),
+            reviewingTodos: req.result.reviewingTodos ?? false,
+            lastFetchTime: req.result.lastFetchTime ?? 0,
+          });
+        } catch {
+          resolve(null);
+        }
+      };
+      req.onerror = () => { db.close(); reject(req.error); };
+    });
   } catch {
     return null;
   }
 }
 
-export function savePersistedState(state: PersistedState): void {
+export async function savePersistedState(state: PersistedState): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(state, STATE_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
   } catch {
-    // Storage full or unavailable
+    // Storage unavailable
   }
 }
 
-export function clearPersistedState(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export async function clearPersistedState(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(STATE_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  } catch {
+    // Storage unavailable
+  }
 }

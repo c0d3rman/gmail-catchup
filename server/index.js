@@ -12,13 +12,14 @@ const DIST_DIR = join(PROJECT_ROOT, 'dist');
 const PORT = process.env.PORT ?? 3001;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const BASE_PATH = (process.env.BASE_PATH ?? '').replace(/\/$/, '');
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error('Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env');
   process.exit(1);
 }
 
-const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
+const FRONTEND_URL = process.env.FRONTEND_URL || BASE_PATH;
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify';
@@ -46,7 +47,7 @@ function writeTokens(tokens) {
 function getRedirectUri(req) {
   const protocol = req.get('x-forwarded-proto') ?? req.protocol;
   const host = req.get('x-forwarded-host') ?? req.get('host');
-  return `${protocol}://${host}/api/auth/callback`;
+  return `${protocol}://${host}${BASE_PATH}/api/auth/callback`;
 }
 
 // --- Routes ---

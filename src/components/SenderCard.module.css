@@ -226,6 +226,7 @@
 .cardContent {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -535,7 +536,13 @@
 @media (max-width: 600px) {
   .card {
     border-radius: 12px;
-    max-height: calc(100vh - 90px);
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .card.single {
+    max-height: none;
   }
 
   .senderHeader {

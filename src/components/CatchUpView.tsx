@@ -57,47 +57,52 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
 
   // Load persisted state on mount
   useEffect(() => {
-    const saved = loadPersistedState();
-    if (saved && saved.senderGroups.length > 0) {
-      setSenderGroups(saved.senderGroups);
-      setCurrentIndex(saved.currentIndex);
-      setTodoGroups(saved.todoGroups);
-      setReviewingTodos(saved.reviewingTodos);
-      setLastFetchTime(saved.lastFetchTime);
+    loadPersistedState().then(saved => {
+      if (saved && saved.senderGroups.length > 0) {
+        setSenderGroups(saved.senderGroups);
+        setCurrentIndex(saved.currentIndex);
+        setTodoGroups(saved.todoGroups);
+        setReviewingTodos(saved.reviewingTodos);
+        setLastFetchTime(saved.lastFetchTime);
 
-      // Check if main queue was exhausted
-      if (!saved.reviewingTodos && saved.currentIndex >= saved.senderGroups.length) {
-        if (saved.todoGroups.length > 0) {
-          setReviewingTodos(true);
-        } else {
+        // Check if main queue was exhausted
+        if (!saved.reviewingTodos && saved.currentIndex >= saved.senderGroups.length) {
+          if (saved.todoGroups.length > 0) {
+            setReviewingTodos(true);
+          } else {
+            setShowComplete(true);
+          }
+        } else if (saved.reviewingTodos && saved.todoGroups.length === 0) {
           setShowComplete(true);
         }
-      } else if (saved.reviewingTodos && saved.todoGroups.length === 0) {
-        setShowComplete(true);
-      }
 
-      // Suggest refresh if stale
-      if (Date.now() - saved.lastFetchTime > THREE_HOURS_MS) {
-        setShowRefreshDialog(true);
+        // Suggest refresh if stale
+        if (Date.now() - saved.lastFetchTime > THREE_HOURS_MS) {
+          setShowRefreshDialog(true);
+        }
+        setInitialized(true);
+      } else {
+        // No saved state, fetch fresh
+        setInitialized(true);
+        fetchEmails();
       }
-      setInitialized(true);
-    } else {
-      // No saved state, fetch fresh
-      setInitialized(true);
-      fetchEmails();
-    }
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save state on changes (after initialization)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (!initialized || isLoading) return;
-    savePersistedState({
-      senderGroups,
-      currentIndex,
-      todoGroups,
-      reviewingTodos,
-      lastFetchTime,
-    });
+    clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      savePersistedState({
+        senderGroups,
+        currentIndex,
+        todoGroups,
+        reviewingTodos,
+        lastFetchTime,
+      });
+    }, 300);
   }, [senderGroups, currentIndex, todoGroups, reviewingTodos, lastFetchTime, initialized, isLoading]);
 
   // --- Data fetching ---
@@ -136,8 +141,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   }, [accessToken]);
 
   const handleRefresh = () => {
-    clearPersistedState();
-    fetchEmails();
+    clearPersistedState().then(() => fetchEmails());
   };
 
   // --- Current group ---
