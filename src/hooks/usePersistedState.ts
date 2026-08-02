@@ -3,7 +3,13 @@ import type { SenderGroup, ParsedEmail } from '../types/gmail';
 const DB_NAME = 'gmail_catchup';
 const DB_VERSION = 1;
 const STORE_NAME = 'state';
-const STATE_KEY = 'persisted';
+const LEGACY_STATE_KEY = 'persisted';
+
+// State is stored per account so switching accounts never surfaces another
+// account's emails.
+function stateKey(account: string): string {
+  return `persisted:${account.toLowerCase()}`;
+}
 
 export interface PersistedState {
   senderGroups: SenderGroup[];
@@ -36,7 +42,48 @@ function reviveGroup(g: SenderGroup): SenderGroup {
   };
 }
 
-export async function loadPersistedState(): Promise<PersistedState | null> {
+function getRaw(key: string): Promise<PersistedState | null> {
+  return openDB().then(db => new Promise<PersistedState | null>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => {
+      db.close();
+      if (!req.result) { resolve(null); return; }
+      try {
+        resolve({
+          senderGroups: req.result.senderGroups.map(reviveGroup),
+          currentIndex: req.result.currentIndex,
+          todoGroups: req.result.todoGroups.map(reviveGroup),
+          reviewingTodos: req.result.reviewingTodos ?? false,
+          lastFetchTime: req.result.lastFetchTime ?? 0,
+        });
+      } catch {
+        resolve(null);
+      }
+    };
+    req.onerror = () => { db.close(); reject(req.error); };
+  }));
+}
+
+function putRaw(key: string, state: PersistedState): Promise<void> {
+  return openDB().then(db => new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(state, key);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  }));
+}
+
+function deleteRaw(key: string): Promise<void> {
+  return openDB().then(db => new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(key);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  }));
+}
+
+export async function loadPersistedState(account: string): Promise<PersistedState | null> {
   try {
     // Migrate from localStorage if present
     const legacy = localStorage.getItem('gmail_catchup_state');
@@ -50,59 +97,38 @@ export async function loadPersistedState(): Promise<PersistedState | null> {
         reviewingTodos: parsed.reviewingTodos ?? false,
         lastFetchTime: parsed.lastFetchTime ?? 0,
       };
-      await savePersistedState(state);
+      await savePersistedState(account, state);
       return state;
     }
 
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get(STATE_KEY);
-      req.onsuccess = () => {
-        db.close();
-        if (!req.result) { resolve(null); return; }
-        try {
-          resolve({
-            senderGroups: req.result.senderGroups.map(reviveGroup),
-            currentIndex: req.result.currentIndex,
-            todoGroups: req.result.todoGroups.map(reviveGroup),
-            reviewingTodos: req.result.reviewingTodos ?? false,
-            lastFetchTime: req.result.lastFetchTime ?? 0,
-          });
-        } catch {
-          resolve(null);
-        }
-      };
-      req.onerror = () => { db.close(); reject(req.error); };
-    });
+    const existing = await getRaw(stateKey(account));
+    if (existing) return existing;
+
+    // Migrate the pre-multi-account key into whichever account is signed in now
+    const unkeyed = await getRaw(LEGACY_STATE_KEY);
+    if (unkeyed) {
+      await deleteRaw(LEGACY_STATE_KEY);
+      await putRaw(stateKey(account), unkeyed);
+      return unkeyed;
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
 
-export async function savePersistedState(state: PersistedState): Promise<void> {
+export async function savePersistedState(account: string, state: PersistedState): Promise<void> {
   try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(state, STATE_KEY);
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
-    });
+    await putRaw(stateKey(account), state);
   } catch {
     // Storage unavailable
   }
 }
 
-export async function clearPersistedState(): Promise<void> {
+export async function clearPersistedState(account: string): Promise<void> {
   try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete(STATE_KEY);
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
-    });
+    await deleteRaw(stateKey(account));
   } catch {
     // Storage unavailable
   }

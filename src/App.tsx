@@ -9,16 +9,19 @@ function App() {
     isLoading,
     accessToken,
     userEmail,
+    accounts,
     error,
     signIn,
     signOut,
+    addAccount,
+    switchAccount,
   } = useGoogleAuth();
 
   if (isLoading) {
     return null;
   }
 
-  if (!isAuthenticated || !accessToken) {
+  if (!isAuthenticated || !accessToken || !userEmail) {
     return (
       <LoginView
         error={error}
@@ -29,8 +32,13 @@ function App() {
 
   return (
     <CatchUpView
+      // Remount on account change so no state leaks between accounts
+      key={userEmail}
       accessToken={accessToken}
       userEmail={userEmail}
+      accounts={accounts}
+      onSwitchAccount={switchAccount}
+      onAddAccount={addAccount}
       onSignOut={signOut}
     />
   );

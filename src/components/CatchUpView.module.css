@@ -112,6 +112,57 @@
   background: rgba(155, 89, 182, 0.3);
 }
 
+.headerRefreshButton {
+  background: rgba(52, 152, 219, 0.15);
+  border: 1px solid rgba(52, 152, 219, 0.4);
+  color: #5dade2;
+  padding: 5px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.headerRefreshButton:hover {
+  background: rgba(52, 152, 219, 0.3);
+  color: white;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 300;
+}
+
+.modal {
+  background: #1b1b2b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  padding: 24px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  color: white;
+}
+
+.modal h2 {
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+
+.modal p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
 .mainContent {
   flex: 1;
   display: flex;

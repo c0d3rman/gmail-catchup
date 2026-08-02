@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SenderCard, type SenderCardHandle, type DragOffset } from './SenderCard';
 import { TodoSidebar } from './TodoSidebar';
+import { AccountMenu } from './AccountMenu';
 import { fetchAllUnreadEmails, groupEmailsBySender, markAsRead, markMultipleAsRead, markMultipleAsUnread, markAsUnread, AuthExpiredError, type LoadingProgress } from '../services/gmail';
 import { loadPersistedState, savePersistedState, clearPersistedState } from '../hooks/usePersistedState';
 import type { SenderGroup, ParsedEmail } from '../types/gmail';
@@ -8,7 +9,10 @@ import styles from './CatchUpView.module.css';
 
 interface CatchUpViewProps {
   accessToken: string;
-  userEmail: string | null;
+  userEmail: string;
+  accounts: string[];
+  onSwitchAccount: (email: string) => void;
+  onAddAccount: () => void;
   onSignOut: () => void;
 }
 
@@ -33,7 +37,14 @@ type Action = GroupAction | EmailAction;
 
 const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
 
-export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewProps) {
+export function CatchUpView({
+  accessToken,
+  userEmail,
+  accounts,
+  onSwitchAccount,
+  onAddAccount,
+  onSignOut,
+}: CatchUpViewProps) {
   const [senderGroups, setSenderGroups] = useState<SenderGroup[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<LoadingProgress | null>(null);
@@ -49,6 +60,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   const [reviewingTodos, setReviewingTodos] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState(0);
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
+  const [showRefreshConfirm, setShowRefreshConfirm] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const cardRef = useRef<SenderCardHandle>(null);
   const departingRef = useRef<SenderCardHandle>(null);
@@ -57,7 +69,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
 
   // Load persisted state on mount
   useEffect(() => {
-    loadPersistedState().then(saved => {
+    loadPersistedState(userEmail).then(saved => {
       if (saved && saved.senderGroups.length > 0) {
         setSenderGroups(saved.senderGroups);
         setCurrentIndex(saved.currentIndex);
@@ -95,7 +107,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     if (!initialized || isLoading) return;
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      savePersistedState({
+      savePersistedState(userEmail, {
         senderGroups,
         currentIndex,
         todoGroups,
@@ -103,7 +115,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
         lastFetchTime,
       });
     }, 300);
-  }, [senderGroups, currentIndex, todoGroups, reviewingTodos, lastFetchTime, initialized, isLoading]);
+  }, [senderGroups, currentIndex, todoGroups, reviewingTodos, lastFetchTime, initialized, isLoading, userEmail]);
 
   // --- Data fetching ---
 
@@ -141,7 +153,8 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   }, [accessToken]);
 
   const handleRefresh = () => {
-    clearPersistedState().then(() => fetchEmails());
+    setShowRefreshConfirm(false);
+    clearPersistedState(userEmail).then(() => fetchEmails());
   };
 
   // --- Current group ---
@@ -151,7 +164,7 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
   // --- Keyboard shortcuts ---
 
   useEffect(() => {
-    if (isLoading || showComplete || !currentGroup) return;
+    if (isLoading || showComplete || !currentGroup || showRefreshConfirm) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -187,6 +200,16 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   });
+
+  // Escape closes the refresh confirmation
+  useEffect(() => {
+    if (!showRefreshConfirm) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowRefreshConfirm(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showRefreshConfirm]);
 
   // --- Counts ---
 
@@ -566,10 +589,13 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
     <div className={styles.container}>
       <header className={styles.header}>
         <div className={styles.headerLeft}>
-          <span className={styles.userEmail}>{userEmail}</span>
-          <button onClick={onSignOut} className={styles.signOutButton}>
-            Sign Out
-          </button>
+          <AccountMenu
+            userEmail={userEmail}
+            accounts={accounts}
+            onSwitchAccount={onSwitchAccount}
+            onAddAccount={onAddAccount}
+            onSignOut={onSignOut}
+          />
         </div>
         <div className={styles.headerCenter}>
           {reviewingTodos && <span className={styles.todoLabel}>Todos</span>}
@@ -585,8 +611,36 @@ export function CatchUpView({ accessToken, userEmail, onSignOut }: CatchUpViewPr
               Todo ({todoGroups.length})
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowRefreshConfirm(true)}
+            className={styles.headerRefreshButton}
+            title="Fetch fresh emails from Gmail"
+          >
+            Refresh
+          </button>
         </div>
       </header>
+
+      {showRefreshConfirm && (
+        <div className={styles.overlay} onClick={() => setShowRefreshConfirm(false)}>
+          <div className={styles.modal} onClick={e => e.stopPropagation()}>
+            <h2>Fetch fresh emails?</h2>
+            <p>
+              This reloads your unread emails from Gmail and discards your current
+              progress{todoGroups.length > 0 ? ', including your todo list' : ''}.
+            </p>
+            <div className={styles.dialogButtons}>
+              <button onClick={handleRefresh} className={styles.refreshButton}>
+                Fetch Fresh Emails
+              </button>
+              <button onClick={() => setShowRefreshConfirm(false)} className={styles.secondaryButton}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={styles.mainContent}>
         <div className={styles.cardStack}>
